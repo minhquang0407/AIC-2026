@@ -90,7 +90,7 @@ class AICPipeline:
             rewrite_query=rewrite_query,
         )
 
-        if gemini_key and gemini_key != "your_gemini_api_key_here":
+        if (gemini_key and gemini_key != "your_gemini_api_key_here") or gemini_keys:
             self.task2 = Task2QAService(
                 task1_service=self.task1,
                 gemini_api_key=gemini_key,
@@ -101,7 +101,7 @@ class AICPipeline:
                 vision_min_interval_sec=gemini_vision_interval,
             )
         else:
-            logger.warning("GEMINI_API_KEY is not set. Task 2 Q&A will be unavailable.")
+            logger.warning("GEMINI_API_KEY/GEMINI_API_KEYS is not set. Task 2 Q&A will be unavailable.")
             self.task2 = None
 
         self.task3 = Task3TRAKEService(task1_service=self.task1)
