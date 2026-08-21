@@ -23,21 +23,48 @@ class Task2QAService:
         videos_dir: str = "videos",
         text_model_name: str = "gemini-3.5-flash-lite",
         vision_model_name: str = "gemini-3.5-flash",
+        gemini_api_keys: list[str] | None = None,
+        vision_min_interval_sec: float | None = None,
     ):
         self.task1 = task1_service
         self.videos_dir = Path(videos_dir)
         self.text_model_name = os.getenv("GEMINI_TEXT_MODEL", text_model_name)
         self.vision_model_name = os.getenv("GEMINI_VISION_MODEL", vision_model_name)
 
-        api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
-        if not api_key:
+        env_keys = [
+            key.strip()
+            for key in os.getenv("GEMINI_API_KEYS", "").split(",")
+            if key.strip()
+        ]
+        keys = gemini_api_keys or env_keys or ([gemini_api_key] if gemini_api_key else [])
+        keys = [key for key in keys if key]
+        if not keys:
+            fallback_key = os.getenv("GEMINI_API_KEY")
+            keys = [fallback_key] if fallback_key else []
+        if not keys:
             raise ValueError(
-                "Missing Gemini API key. Set GEMINI_API_KEY in .env or pass gemini_api_key explicitly."
+                "Missing Gemini API key. Set GEMINI_API_KEY/GEMINI_API_KEYS in .env or pass keys explicitly."
             )
-        self.ai_client = genai.Client(api_key=api_key)
+        self.ai_clients = [genai.Client(api_key=key) for key in keys]
+        self.ai_client = self.ai_clients[0]
+        self._client_cursor = 0
+        self.vision_min_interval_sec = (
+            vision_min_interval_sec
+            if vision_min_interval_sec is not None
+            else float(os.getenv("GEMINI_VISION_MIN_INTERVAL_SEC", "0"))
+        )
+        self._last_vision_call_ts = 0.0
+
+    def _rate_limit_vision(self) -> None:
+        if self.vision_min_interval_sec <= 0:
+            return
+        elapsed = time.monotonic() - self._last_vision_call_ts
+        wait_s = self.vision_min_interval_sec - elapsed
+        if wait_s > 0:
+            time.sleep(wait_s)
 
     def _call_gemini_safe(self, contents: list, temperature: float = 0.0) -> str:
-        """Gá»i Gemini cÃ³ cÆ¡ cháº¿ thá»­ láº¡i (retry) vÃ  fallback model náº¿u gáº·p Rate Limit (429)"""
+        """Call Gemini Vision with model fallback, API-key rotation, and rate limiting."""
         models_to_try = [
             self.vision_model_name,
             "gemini-3.5-flash",
@@ -45,30 +72,43 @@ class Task2QAService:
             "gemini-2.0-flash",
             "gemini-1.5-flash",
         ]
-        # Loáº¡i bá» trÃ¹ng láº·p giá»¯ thá»© tá»±
         seen = set()
         models_to_try = [m for m in models_to_try if not (m in seen or seen.add(m))]
 
+        total_clients = len(self.ai_clients)
         for model in models_to_try:
-            try:
-                response = self.ai_client.models.generate_content(
-                    model=model,
-                    contents=contents,
-                    config=types.GenerateContentConfig(temperature=temperature),
-                )
-                if response and response.text:
-                    return response.text.strip()
-            except errors.APIError as exc:
-                if exc.code == 429 or "RESOURCE_EXHAUSTED" in str(exc):
-                    logger.warning("Model %s bá»‹ quÃ¡ táº£i quota (429). Thá»­ model tiáº¿p theo...", model)
-                    time.sleep(1)
-                    continue
-                logger.warning("Lá»—i API Gemini (%s): %s", model, exc)
-            except Exception as e:
-                logger.warning("Lá»—i khi gá»i model %s: %s", model, e)
-                time.sleep(0.5)
+            for _ in range(total_clients):
+                client_idx = self._client_cursor % total_clients
+                client = self.ai_clients[client_idx]
+                try:
+                    self._rate_limit_vision()
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=contents,
+                        config=types.GenerateContentConfig(temperature=temperature),
+                    )
+                    self._last_vision_call_ts = time.monotonic()
+                    self._client_cursor = (client_idx + 1) % total_clients
+                    if response and response.text:
+                        return response.text.strip()
+                except errors.APIError as exc:
+                    self._last_vision_call_ts = time.monotonic()
+                    if exc.code in (429, 503) or "RESOURCE_EXHAUSTED" in str(exc):
+                        logger.warning(
+                            "Gemini key #%d/model %s quota or demand error (%s). Rotating key...",
+                            client_idx + 1,
+                            model,
+                            exc.code,
+                        )
+                        self._client_cursor = (client_idx + 1) % total_clients
+                        continue
+                    logger.warning("Lỗi API Gemini (%s, key #%d): %s", model, client_idx + 1, exc)
+                except Exception as e:
+                    self._last_vision_call_ts = time.monotonic()
+                    logger.warning("Lỗi khi gọi model %s key #%d: %s", model, client_idx + 1, e)
+                    self._client_cursor = (client_idx + 1) % total_clients
 
-        return "KhÃ´ng thá»ƒ láº¥y cÃ¢u tráº£ lá»i tá»« Gemini API."
+        return "Không thể lấy câu trả lời từ Gemini API."
 
     def _parse_query(self, query: str) -> tuple[str, str]:
         """DÃ¹ng Gemini phÃ¢n tÃ­ch query thÃ nh KIS query vÃ  QA question"""

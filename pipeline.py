@@ -63,8 +63,14 @@ class AICPipeline:
         self.rewrite_query = rewrite_query
 
         gemini_key = get_env("GEMINI_API_KEY")
+        gemini_keys = [
+            key.strip()
+            for key in str(get_env("GEMINI_API_KEYS", "") or "").split(",")
+            if key.strip()
+        ]
         gemini_text_model = get_env("GEMINI_TEXT_MODEL", "gemini-3.5-flash-lite")
         gemini_vision_model = get_env("GEMINI_VISION_MODEL", "gemini-3.5-flash")
+        gemini_vision_interval = float(get_env("GEMINI_VISION_MIN_INTERVAL_SEC", "0") or "0")
         self.object_extractor = ObjectClassExtractor(
             gemini_api_key=gemini_key,
             text_model_name=gemini_text_model or "gemini-3.5-flash-lite",
@@ -91,6 +97,8 @@ class AICPipeline:
                 videos_dir="videos",
                 text_model_name=gemini_text_model or "gemini-3.5-flash-lite",
                 vision_model_name=gemini_vision_model or "gemini-3.5-flash",
+                gemini_api_keys=gemini_keys or None,
+                vision_min_interval_sec=gemini_vision_interval,
             )
         else:
             logger.warning("GEMINI_API_KEY is not set. Task 2 Q&A will be unavailable.")
