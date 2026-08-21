@@ -22,7 +22,7 @@ class Task2QAService:
         gemini_api_key: str | None = None,
         videos_dir: str = "videos",
         text_model_name: str = "gemini-3.5-flash-lite",
-        vision_model_name: str = "gemini-3.7-flash",
+        vision_model_name: str = "gemini-3.5-flash",
     ):
         self.task1 = task1_service
         self.videos_dir = Path(videos_dir)
@@ -40,7 +40,7 @@ class Task2QAService:
         """Gá»i Gemini cÃ³ cÆ¡ cháº¿ thá»­ láº¡i (retry) vÃ  fallback model náº¿u gáº·p Rate Limit (429)"""
         models_to_try = [
             self.vision_model_name,
-            "gemini-3.7-flash",
+            "gemini-3.5-flash",
             "gemini-3.6-flash",
             "gemini-2.0-flash",
             "gemini-1.5-flash",
@@ -73,13 +73,34 @@ class Task2QAService:
     def _parse_query(self, query: str) -> tuple[str, str]:
         """DÃ¹ng Gemini phÃ¢n tÃ­ch query thÃ nh KIS query vÃ  QA question"""
         prompt = f"""
-        Báº¡n lÃ  má»™t trá»£ lÃ½ AI xá»­ lÃ½ ngÃ´n ngá»¯ tá»± nhiÃªn.
-        Nhiá»‡m vá»¥ cá»§a báº¡n lÃ  phÃ¢n tÃ­ch má»™t cÃ¢u truy váº¥n video thÃ nh 2 pháº§n:
-        1. 'kis_query': CÃ¢u mÃ´ táº£ chi tiáº¿t, giÃ u thÃ´ng tin Ä‘á»ƒ dÃ¹ng lÃ m tá»« khÃ³a tÃ¬m kiáº¿m khung hÃ¬nh (frame) trong video.
-        2. 'qa_question': CÃ¢u há»i cá»¥ thá»ƒ cáº§n tráº£ lá»i dá»±a trÃªn khung hÃ¬nh Ä‘Ã³.
+You are a text-routing assistant for a video retrieval + visual QA system.
+Split the user query into JSON with exactly two fields:
 
-        Äáº§u vÃ o: "{query}"
-        """
+1. "kis_query": a concise visual retrieval phrase used to find the correct video frame.
+   - Include visible scene, objects, people, actions, place, colors, and temporal clues.
+   - If the question asks to read text/OCR/signs/poems/inscriptions, explicitly include cues like
+     "visible Vietnamese text", "poem text", "signboard", "inscription", or "OCR".
+   - Preserve Vietnamese proper nouns, place names, person names, organization names,
+     quoted text, poem text, signs, and named landmarks exactly as written.
+   - Do not translate or romanize Vietnamese names/OCR text.
+   - Remove only non-visual filler words.
+
+2. "qa_question": the final question that the vision model must answer from the found frame.
+   - Keep Vietnamese if the user asked in Vietnamese.
+   - Preserve exact names and quoted/OCR text.
+   - Make it short and direct.
+
+Return JSON only.
+
+Example:
+Input: "Trong đoạn video có 2 câu thơ của một nhà thơ ca ngợi anh hùng Nguyễn Trung Trực trong đình thần Nguyễn Trung Trực tại Kiên Giang. Hai câu thơ đó là gì?"
+Output: {{
+  "kis_query": "đình thần Nguyễn Trung Trực tại Kiên Giang, visible Vietnamese poem text / OCR ca ngợi anh hùng Nguyễn Trung Trực",
+  "qa_question": "Hai câu thơ ca ngợi anh hùng Nguyễn Trung Trực là gì?"
+}}
+
+Input query: "{query}"
+"""
         try:
             response = self.ai_client.models.generate_content(
                 model=self.text_model_name,

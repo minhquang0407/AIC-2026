@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import logging
 import re
@@ -54,7 +54,10 @@ class QueryRewriter:
 You rewrite video retrieval queries for a SigLIP2 text encoder with a short context window.
 Convert the input into one concise visual search phrase of at most {max_words} words.
 Keep only visible evidence: objects, people, actions, scene, colors, place, OCR/text cues, and temporal moment.
-Do not invent details. Prefer clear English visual wording. Return only the rewritten phrase.
+Use clear English visual wording for generic visual concepts.
+Preserve Vietnamese proper nouns, place names, person names, organization names, OCR text, signs, poems, quoted text, and named landmarks exactly as written.
+Do not translate or romanize Vietnamese names or quoted/OCR text.
+Do not invent details. Return only the rewritten phrase.
 
 Input query:
 {clean_query}
