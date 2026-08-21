@@ -22,7 +22,7 @@ class Task2QAService:
         gemini_api_key: str | None = None,
         videos_dir: str = "videos",
         text_model_name: str = "gemini-3.5-flash-lite",
-        vision_model_name: str = "gemini-2.5-flash",
+        vision_model_name: str = "gemini-3.7-flash",
     ):
         self.task1 = task1_service
         self.videos_dir = Path(videos_dir)
@@ -40,7 +40,8 @@ class Task2QAService:
         """Gá»i Gemini cÃ³ cÆ¡ cháº¿ thá»­ láº¡i (retry) vÃ  fallback model náº¿u gáº·p Rate Limit (429)"""
         models_to_try = [
             self.vision_model_name,
-            "gemini-2.5-flash",
+            "gemini-3.7-flash",
+            "gemini-3.6-flash",
             "gemini-2.0-flash",
             "gemini-1.5-flash",
         ]
